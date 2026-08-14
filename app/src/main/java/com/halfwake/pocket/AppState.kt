@@ -30,6 +30,7 @@ object AppState {
     var appTracker: Boolean = false
     var widgetClockStyle: String = "analog" // "analog" | "digital"
     var widgetTheme: String = "light"
+    var widgetBorderColor: String = "gold" // "gold" | "metallic_green" | "black" | "white" — widget-only, see BorderColors
     var appTheme: String = "light"
     var updateIntervalMinutes: Int = 30 // 15 | 30 | 60
     var alarmSoundUri: String? = null // null = default beep
@@ -102,6 +103,7 @@ object AppState {
         o.put("appTracker", appTracker)
         o.put("widgetClockStyle", widgetClockStyle)
         o.put("widgetTheme", widgetTheme)
+        o.put("widgetBorderColor", widgetBorderColor)
         o.put("appTheme", appTheme)
         o.put("updateIntervalMinutes", updateIntervalMinutes)
         o.put("alarmSoundUri", alarmSoundUri)
@@ -151,6 +153,7 @@ object AppState {
             appTracker = o.optBoolean("appTracker", appTracker)
             widgetClockStyle = o.optString("widgetClockStyle", widgetClockStyle)
             widgetTheme = o.optString("widgetTheme", widgetTheme)
+            widgetBorderColor = o.optString("widgetBorderColor", widgetBorderColor)
             appTheme = o.optString("appTheme", appTheme)
             updateIntervalMinutes = o.optInt("updateIntervalMinutes", updateIntervalMinutes)
             alarmSoundUri = if (o.isNull("alarmSoundUri")) null else o.optString("alarmSoundUri", null)
