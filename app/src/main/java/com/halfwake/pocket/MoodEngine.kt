@@ -16,7 +16,7 @@ object Thresholds {
     // 3 SEVERE, 4 CRITICAL, 5 EMERGENCY, 6 SHUTDOWN.
     const val BURNING_THERMAL_STATUS_MIN = 3
 
-    const val GROGGY_UPTIME_MS = 60L * 60 * 1000
+    const val GROGGY_UPTIME_MS = 15L * 60 * 1000
 
     const val HAPPY_GAME_MS_LAST_HOUR = 15L * 60 * 1000
     const val SAD_SOCIAL_MS_LAST_HOUR = 30L * 60 * 1000
@@ -76,7 +76,7 @@ fun computeMood(m: PhoneMetrics): MoodResult {
     // 3. Groggy — just rebooted.
     if (m.uptimeMs < Thresholds.GROGGY_UPTIME_MS) {
         val mins = m.uptimeMs / 60000
-        return MoodResult(Mood.GROGGY, "uptime is ${mins}m, under the 60m groggy threshold")
+        return MoodResult(Mood.GROGGY, "uptime is ${mins}m, under the 15m groggy threshold")
     }
 
     // 4. Fed — plugged in and charging right now.
