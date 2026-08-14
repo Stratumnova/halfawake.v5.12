@@ -34,6 +34,24 @@ class MainActivity : AppCompatActivity() {
     private var playMode = "game"
 
     private val notifPermLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    /** Was showing a generic "Custom sound selected" — now queries the
+     * real filename from the URI directly, no new persisted field needed. */
+    private fun soundFileLabel(): String {
+        val uriStr = AppState.alarmSoundUri ?: return "Using default (no file chosen)"
+        return try {
+            val uri = Uri.parse(uriStr)
+            contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val name = cursor.getString(0)
+                    if (!name.isNullOrBlank()) return "Using: $name"
+                }
+                "Custom sound selected"
+            } ?: "Custom sound selected"
+        } catch (e: Exception) {
+            "Custom sound selected"
+        }
+    }
+
     private val soundPickerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             val uri: Uri? = result.data?.data
@@ -443,7 +461,7 @@ class MainActivity : AppCompatActivity() {
         col.addView(swDisplay)
         val swBtns = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
         swBtns.addView(Button(this).apply {
-            text = if (AppState.stopwatchRunning) "Stop" else "Start"
+            text = if (AppState.stopwatchRunning) "Pause" else "Start" // was "Stop" — behavior already paused-not-reset, label was just wrong
             setOnClickListener {
                 if (AppState.stopwatchRunning) {
                     AppState.stopwatchElapsedMs += System.currentTimeMillis() - AppState.stopwatchStartedAt
@@ -513,29 +531,88 @@ class MainActivity : AppCompatActivity() {
             actions.addView(Button(this).apply { text = "Reset"; setOnClickListener { tm.remainingMs = 0; tm.totalMs = 0; AppState.save(this@MainActivity); renderTab() } })
             row.addView(actions)
         } else {
-            row.addView(Button(this).apply { text = "Cancel"; setOnClickListener { tm.running = false; tm.remainingMs = 0; AppState.save(this@MainActivity); renderTab() } })
+            val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+            actions.addView(Button(this).apply {
+                text = "Pause"
+                setOnClickListener { tm.running = false; AppState.save(this@MainActivity); renderTab() } // leaves remainingMs alone — Cancel is the one that zeroes it
+            })
+            actions.addView(Button(this).apply { text = "Cancel"; setOnClickListener { tm.running = false; tm.remainingMs = 0; AppState.save(this@MainActivity); renderTab() } })
+            row.addView(actions)
         }
         return row
     }
 
+    /** Parses "HH:MM", returns a human "in Xh Ym" / "in Ym" string for how
+     * long until that time next occurs (today if still ahead, tomorrow if
+     * it's already passed). Returns null if the string won't parse — the
+     * free-text time field can still hold something malformed until the
+     * real picker replaces it. */
+    private fun timeUntilAlarm(time: String): String? {
+        val parts = time.split(":")
+        if (parts.size != 2) return null
+        val h = parts[0].toIntOrNull() ?: return null
+        val m = parts[1].toIntOrNull() ?: return null
+        if (h !in 0..23 || m !in 0..59) return null
+
+        val now = java.util.Calendar.getInstance()
+        val target = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, h); set(java.util.Calendar.MINUTE, m)
+            set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+        }
+        if (target.before(now)) target.add(java.util.Calendar.DAY_OF_YEAR, 1)
+
+        val diffMin = (target.timeInMillis - now.timeInMillis) / 60000
+        val hrs = diffMin / 60; val mins = diffMin % 60
+        return if (hrs > 0) "in ${hrs}h ${mins}m" else "in ${mins}m"
+    }
+
     private fun buildAlarmRow(i: Int, al: AlarmSlot): View {
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 8, 0, 8) }
-        row.addView(Switch(this).apply {
-            isChecked = al.enabled
-            setOnCheckedChangeListener { _, checked ->
-                al.enabled = checked
-                if (AppState.appTracker) EventProcessor.process(this@MainActivity, "setting_changed", mapOf("label" to "${al.name} (${al.time})", "state" to if (checked) "ON" else "OFF"))
-                AppState.save(this@MainActivity)
+        val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 8, 0, 8) }
+        val toggleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+
+        // Was a single Switch — real reported bug alongside the UI request:
+        // edits to name/time never called renderTab(), so the screen could
+        // look like nothing had taken even though AppState was updated
+        // correctly underneath. Every mutation below now re-renders
+        // immediately, which is the actual fix, not just the button swap.
+        toggleRow.addView(Button(this).apply {
+            text = "ON"
+            alpha = if (al.enabled) 1f else 0.4f
+            setOnClickListener {
+                if (!al.enabled) {
+                    al.enabled = true
+                    if (AppState.appTracker) EventProcessor.process(this@MainActivity, "setting_changed", mapOf("label" to "${al.name} (${al.time})", "state" to "ON"))
+                    AppState.save(this@MainActivity); renderTab()
+                }
             }
         })
+        toggleRow.addView(Button(this).apply {
+            text = "OFF"
+            alpha = if (!al.enabled) 1f else 0.4f
+            setOnClickListener {
+                if (al.enabled) {
+                    al.enabled = false
+                    if (AppState.appTracker) EventProcessor.process(this@MainActivity, "setting_changed", mapOf("label" to "${al.name} (${al.time})", "state" to "OFF"))
+                    AppState.save(this@MainActivity); renderTab()
+                }
+            }
+        })
+        row.addView(toggleRow)
+
         row.addView(EditText(this).apply {
             setText(al.name)
-            setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) { al.name = text.toString().ifBlank { "Alarm ${i+1}" }; AppState.save(this@MainActivity) } }
+            setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) { al.name = text.toString().ifBlank { "Alarm ${i+1}" }; AppState.save(this@MainActivity); renderTab() } }
         })
         row.addView(EditText(this).apply {
             setText(al.time)
-            setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) { al.time = text.toString(); al.firedKey = null; AppState.save(this@MainActivity) } }
+            setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) { al.time = text.toString(); al.firedKey = null; AppState.save(this@MainActivity); renderTab() } }
         })
+
+        if (al.enabled) {
+            timeUntilAlarm(al.time)?.let { until ->
+                row.addView(TextView(this).apply { text = until; textSize = 12f; alpha = 0.7f })
+            }
+        }
         return row
     }
 
@@ -697,7 +774,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         col.addView(sectionTitle("Alarm & timer sound"))
-        col.addView(TextView(this).apply { text = if (AppState.alarmSoundUri != null) "Custom sound selected" else "Using default (no file chosen)" })
+        col.addView(TextView(this).apply { text = soundFileLabel() })
         col.addView(Button(this).apply {
             text = "Choose sound file"
             setOnClickListener {
