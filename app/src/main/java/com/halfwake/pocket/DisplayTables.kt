@@ -10,22 +10,22 @@ data class ThemeColors(val bg: Int, val fg: Int, val muted: Int, val accent: Int
  * other) and is now a standing rule, not just a preference. */
 object Moods {
     private val colors: Map<String, Int> = mapOf(
-        Mood.CRITICAL.id to Color.parseColor("#a34444"),
-        Mood.BURNING.id to Color.parseColor("#c2703d"),
-        Mood.GROGGY.id to Color.parseColor("#9a9488"),
-        Mood.FED.id to Color.parseColor("#4f7a3a"),
-        Mood.HAPPY.id to Color.parseColor("#c9a227"),
-        Mood.SAD.id to Color.parseColor("#5c6a8f"),
-        Mood.TIRED.id to Color.parseColor("#7a7385"),
-        Mood.BUSY.id to Color.parseColor("#c2703d"),
-        Mood.QUIET.id to Color.parseColor("#3d4a5c"),
-        Mood.RESTLESS.id to Color.parseColor("#6f6b8f"),
-        Mood.CONTENT.id to Color.parseColor("#6b7a5e"),
-        "smug" to Color.parseColor("#c9a227"),
-        "grumpy" to Color.parseColor("#a34444"),
-        "alarm" to Color.parseColor("#a34444"),
-        "countdown" to Color.parseColor("#c2703d"),
-        "startled" to Color.parseColor("#e08a3d"),
+        Mood.CRITICAL.id to Color.parseColor("#e53935"),
+        Mood.BURNING.id to Color.parseColor("#ef6c00"),
+        Mood.GROGGY.id to Color.parseColor("#9575cd"),
+        Mood.FED.id to Color.parseColor("#43a047"),
+        Mood.HAPPY.id to Color.parseColor("#ffca28"),
+        Mood.SAD.id to Color.parseColor("#5c6bc0"),
+        Mood.TIRED.id to Color.parseColor("#8e6bbf"),
+        Mood.BUSY.id to Color.parseColor("#ff7043"),
+        Mood.QUIET.id to Color.parseColor("#3949ab"),
+        Mood.RESTLESS.id to Color.parseColor("#7c4dff"),
+        Mood.CONTENT.id to Color.parseColor("#7cb342"),
+        "smug" to Color.parseColor("#ffb300"),
+        "grumpy" to Color.parseColor("#d84315"),
+        "alarm" to Color.parseColor("#e53935"),
+        "countdown" to Color.parseColor("#fb8c00"),
+        "startled" to Color.parseColor("#ffa726"),
     )
     fun colorOf(moodKey: String): Int = colors[moodKey] ?: colors[Mood.CONTENT.id]!!
 }
