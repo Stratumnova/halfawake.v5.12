@@ -70,11 +70,26 @@ class FaceClockView @JvmOverloads constructor(
         super.onDraw(canvas)
         val w = width.toFloat(); val h = height.toFloat()
         val cx = w / 2f; val cy = h / 2f
-        val r = min(w, h) / 2f - 4f
+        val fullR = min(w, h) / 2f - 4f
+
+        // Border is widget-only (never the in-app live view, which already
+        // has its own background and doesn't need to "pop" against a
+        // wallpaper). Drawn INSIDE the existing canvas — the face/clock
+        // circle shrinks to make room, rather than growing the canvas.
+        val showBorder = !live
+        val borderW = if (showBorder) fullR * 0.10f else 0f
+        val r = fullR - borderW
 
         val theme = Themes.of(AppState.widgetTheme)
         val moodColor = Moods.colorOf(moodKey)
         val ink = theme.fg
+
+        if (showBorder) {
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = borderW
+            paint.color = BorderColors.of(AppState.widgetBorderColor)
+            canvas.drawCircle(cx, cy, r + borderW / 2f, paint)
+        }
 
         // paper backing
         paint.style = Paint.Style.FILL; paint.color = theme.bg
@@ -97,7 +112,38 @@ class FaceClockView @JvmOverloads constructor(
         val face = Faces.of(moodKey)
         val blinking = live && System.currentTimeMillis() < blinkUntil
         drawFace(canvas, cx, cy, r, ink, theme.bg, face, blinking)
-        drawClockOrCountdown(canvas, cx, cy, r, ink, theme.bg)
+        drawClockOrCountdown(canvas, cx, cy, r, ink, theme.bg, moodColor)
+
+        if (showBorder) {
+            AppState.alarms.forEachIndexed { idx, al ->
+                if (!al.enabled) return@forEachIndexed
+                val parts = al.time.split(":")
+                val hh = parts.getOrNull(0)?.toIntOrNull() ?: return@forEachIndexed
+                val mm = parts.getOrNull(1)?.toIntOrNull() ?: return@forEachIndexed
+                val angle = ((hh % 12 + mm / 60.0) / 12.0 * 2 * PI).toFloat()
+                val color = AlarmArrowColors.colors.getOrElse(idx) { Color.RED }
+                drawAlarmArrow(canvas, cx, cy, angle, r, borderW, color)
+            }
+        }
+    }
+
+    /** Small triangle, base sitting in the border ring, tip pointing
+     * radially inward toward the alarm's set time. One per enabled alarm,
+     * each in that alarm's own color from AlarmArrowColors. */
+    private fun drawAlarmArrow(canvas: Canvas, cx: Float, cy: Float, angle: Float, r: Float, borderW: Float, color: Int) {
+        val tipR = r - borderW * 0.15f
+        val baseR = r + borderW * 0.85f
+        val dirX = sin(angle); val dirY = -cos(angle)
+        val perpX = cos(angle); val perpY = sin(angle)
+        val halfWidth = borderW * 0.35f
+
+        val tipX = cx + dirX * tipR; val tipY = cy + dirY * tipR
+        val base1X = cx + dirX * baseR + perpX * halfWidth; val base1Y = cy + dirY * baseR + perpY * halfWidth
+        val base2X = cx + dirX * baseR - perpX * halfWidth; val base2Y = cy + dirY * baseR - perpY * halfWidth
+
+        val path = Path().apply { moveTo(tipX, tipY); lineTo(base1X, base1Y); lineTo(base2X, base2Y); close() }
+        paint.style = Paint.Style.FILL; paint.color = color
+        canvas.drawPath(path, paint)
     }
 
     private fun drawFace(canvas: Canvas, cx: Float, cy: Float, r: Float, ink: Int, bg: Int, face: FaceParams, blinking: Boolean) {
@@ -180,7 +226,7 @@ class FaceClockView @JvmOverloads constructor(
         }
     }
 
-    private fun drawClockOrCountdown(canvas: Canvas, cx: Float, cy: Float, r: Float, ink: Int, bg: Int) {
+    private fun drawClockOrCountdown(canvas: Canvas, cx: Float, cy: Float, r: Float, ink: Int, bg: Int, moodColor: Int) {
         val now = Calendar.getInstance()
         val cd = EffectiveState.activeCountdownTimer()
 
@@ -193,7 +239,11 @@ class FaceClockView @JvmOverloads constructor(
             return
         }
 
-        // numerals
+        // numerals — was a fixed ink/bg pair regardless of what mood color
+        // sat behind each one; real contrast bug, worse after Round 1's
+        // more saturated palette. Now picks black/white against the
+        // ACTUAL color behind each numeral (solid mood color on the right
+        // half, that same color faded 30% over bg on the left half).
         paint.textAlign = Paint.Align.CENTER
         paint.textSize = r * 0.11f
         val numRadius = r * 0.85f
@@ -201,15 +251,21 @@ class FaceClockView @JvmOverloads constructor(
             val a = (i / 12.0 * 2 * PI).toFloat()
             val nx = cx + sin(a) * numRadius
             val ny = cy - cos(a) * numRadius + r * 0.04f
-            haloText(canvas, i.toString(), nx, ny, ink, bg)
+            val onSolidSide = sin(a) >= 0
+            val localBg = if (onSolidSide) moodColor else Contrast.blend(bg, moodColor, 0.3f)
+            val numeralColor = Contrast.of(localBg)
+            val haloColor = Contrast.of(numeralColor) // inverse of the numeral color, guaranteed to contrast against it
+            haloText(canvas, i.toString(), nx, ny, numeralColor, haloColor)
         }
 
         if (AppState.widgetClockStyle == "analog") {
             val hrs = now.get(Calendar.HOUR) ; val mins = now.get(Calendar.MINUTE); val secs = now.get(Calendar.SECOND)
             val hourAngle = ((hrs + mins / 60.0) / 12.0 * 2 * PI).toFloat()
             val minAngle = ((mins + secs / 60.0) / 60.0 * 2 * PI).toFloat()
-            drawHand(canvas, cx, cy, hourAngle, r * 0.95f, r * 0.045f, ink, bg)
-            drawHand(canvas, cx, cy, minAngle, r * 0.75f, r * 0.028f, ink, bg)
+            // Was backwards since the very first version — minute hand
+            // should reach the edge, hour hand should be the shorter one.
+            drawHand(canvas, cx, cy, hourAngle, r * 0.75f, r * 0.045f, ink, bg)
+            drawHand(canvas, cx, cy, minAngle, r * 0.95f, r * 0.028f, ink, bg)
         } else {
             val h = now.get(Calendar.HOUR); val displayH = if (h == 0) 12 else h
             val m = now.get(Calendar.MINUTE)
