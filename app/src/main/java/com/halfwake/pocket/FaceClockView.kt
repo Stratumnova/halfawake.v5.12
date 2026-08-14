@@ -27,14 +27,15 @@ class FaceClockView @JvmOverloads constructor(
     var reasonText: String = ""
     var live: Boolean = true // false when used purely for widget bitmap capture
 
-    var onSingleTap: (() -> Unit)? = null
-    var onDoubleTap: (() -> Unit)? = null
-    private val gestureDetector by lazy {
-        android.view.GestureDetector(context, object : android.view.GestureDetector.SimpleOnGestureListener() {
-            override fun onSingleTapConfirmed(e: MotionEvent): Boolean { onSingleTap?.invoke(); return true }
-            override fun onDoubleTap(e: MotionEvent): Boolean { onDoubleTap?.invoke(); return true }
-        })
-    }
+    // Was GestureDetector with single+double tap — onSingleTapConfirmed()
+    // specifically has to WAIT for the double-tap timeout window (~300-
+    // 400ms) before firing, since it can't know a second tap isn't coming.
+    // Removing double-tap entirely means this can fire immediately on
+    // ACTION_UP instead — genuinely snappier, not just simpler.
+    var onTap: (() -> Unit)? = null
+    private var touchDownX = 0f
+    private var touchDownY = 0f
+    private var touchDownTime = 0L
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var pointerX = -1f
@@ -46,7 +47,18 @@ class FaceClockView @JvmOverloads constructor(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         pointerX = event.x; pointerY = event.y
         if (live) invalidate()
-        gestureDetector.onTouchEvent(event)
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> { touchDownX = event.x; touchDownY = event.y; touchDownTime = System.currentTimeMillis() }
+            MotionEvent.ACTION_UP -> {
+                // Distinguishes a real tap from the eye-tracking drag —
+                // pointerX/Y update continuously while a finger moves, so
+                // this only fires for something that stayed roughly in
+                // place and didn't linger like a long-press.
+                val dist = hypot(event.x - touchDownX, event.y - touchDownY)
+                val duration = System.currentTimeMillis() - touchDownTime
+                if (dist < 20f && duration < 500) onTap?.invoke()
+            }
+        }
         return true
     }
 
