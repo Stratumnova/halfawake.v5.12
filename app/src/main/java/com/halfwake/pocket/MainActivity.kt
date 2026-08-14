@@ -79,8 +79,15 @@ class MainActivity : AppCompatActivity() {
         // discussed — real GestureDetector, not a platform-limited widget
         // workaround. This is the in-app face specifically; the home-screen
         // widget itself still only has the one tap Android allows it.
-        faceView.onSingleTap = { toggleQuickStats() }
-        faceView.onDoubleTap = { activeTab = "settings"; tabBar.selectedItemId = R.id.tab_settings; renderTab() }
+        // Was single-tap=quick-stats, double-tap=jump-to-Settings. Double-
+        // tap removed entirely (see FaceClockView's onTap doc for why it
+        // was actually hurting responsiveness, not just being unused).
+        // Touching the face now dismisses first if something's ringing —
+        // real fix for "touching the face should stop the alarm."
+        faceView.onTap = {
+            if (AppState.ringingSource != null) { dismissRinging(); renderTab() }
+            else toggleQuickStats()
+        }
 
         tabBar = findViewById(R.id.tab_bar)
         tabBar.setOnItemSelectedListener { item ->
@@ -308,15 +315,35 @@ class MainActivity : AppCompatActivity() {
 
     private fun buildPlayTab(): View {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
-        val modeBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        modeBar.addView(Button(this).apply { text = "Code Breaker"; setOnClickListener { playMode = "game"; renderTab() } })
-        modeBar.addView(Button(this).apply { text = "Calculator"; setOnClickListener { playMode = "calculator"; renderTab() } })
-        col.addView(modeBar)
-        col.addView(if (playMode == "game") buildGameArea() else buildCalculatorArea())
+
+        // Was two separate mode-select buttons — now one toggle, same
+        // underlying playMode switch either way.
+        val toggleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+        toggleRow.addView(TextView(this).apply { text = "Calculator"; textSize = 14f; setPadding(0, 0, 12, 0) })
+        toggleRow.addView(Switch(this).apply {
+            isChecked = playMode == "game"
+            setOnCheckedChangeListener { _, checked -> playMode = if (checked) "game" else "calculator"; renderTab() }
+        })
+        toggleRow.addView(TextView(this).apply { text = "Code Breaker"; textSize = 14f; setPadding(12, 0, 0, 0) })
+        col.addView(toggleRow)
+
+        // Display stays mode-specific — what's shown genuinely differs.
+        col.addView(if (playMode == "game") buildGameDisplay() else buildCalculatorDisplay())
+
+        // One shared, larger keypad — the actual fix for "buttons are too
+        // small." Was two entirely separate digit grids before; same
+        // physical 0-9 buttons now, routed by playMode, only the action
+        // row beneath still differs per mode.
+        col.addView(buildSharedKeypad())
+
         return col
     }
 
-    private fun buildGameArea(): View {
+    private fun bigKeypadButton(label: String): Button = Button(this).apply {
+        text = label; textSize = 24f; setPadding(24, 32, 24, 32)
+    }
+
+    private fun buildGameDisplay(): View {
         if (AppState.gameSession == null) startNewGame()
         val gs = AppState.gameSession!!
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, 16, 0, 0) }
@@ -332,30 +359,14 @@ class MainActivity : AppCompatActivity() {
         }
         col.addView(board)
 
-        val inputRow = TextView(this).apply {
+        col.addView(TextView(this).apply {
             text = if (currentInput.isEmpty()) "____" else currentInput.joinToString(" ")
             gravity = Gravity.CENTER; textSize = 20f; setPadding(0, 16, 0, 16)
-        }
-        col.addView(inputRow)
-
-        if (!gs.finished) {
-            val pad = GridLayout(this).apply { columnCount = 3 }
-            for (d in 0..9) {
-                pad.addView(Button(this).apply {
-                    text = d.toString()
-                    setOnClickListener { if (currentInput.size < 4) { currentInput.add(d); renderTab() } }
-                })
-            }
-            col.addView(pad)
-            val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-            actions.addView(Button(this).apply { text = "Clear"; setOnClickListener { currentInput.clear(); renderTab() } })
-            actions.addView(Button(this).apply { text = "Guess"; setOnClickListener { submitGuess() } })
-            col.addView(actions)
-            col.addView(TextView(this).apply { text = "${gs.guessesLeft} guesses left"; gravity = Gravity.CENTER })
-        } else {
-            col.addView(TextView(this).apply { text = "Game over"; gravity = Gravity.CENTER })
-        }
-        col.addView(Button(this).apply { text = "New game"; setOnClickListener { startNewGame(); renderTab() } })
+        })
+        col.addView(TextView(this).apply {
+            text = if (gs.finished) "Game over" else "${gs.guessesLeft} guesses left"
+            gravity = Gravity.CENTER
+        })
         return col
     }
 
@@ -404,16 +415,50 @@ class MainActivity : AppCompatActivity() {
     private var calcTokens = mutableListOf<String>()
     private var calcCurrent = "0"; private var calcAcc: Double? = null; private var calcOp: String? = null; private var calcFresh = true
 
-    private fun buildCalculatorArea(): View {
+    private fun buildCalculatorDisplay(): View {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, 16, 0, 0) }
         val displayText = (calcTokens + calcCurrent).joinToString(" ")
-        col.addView(TextView(this).apply { text = displayText; textSize = 22f; gravity = Gravity.CENTER; setPadding(16, 16, 16, 16) })
-        val pad = GridLayout(this).apply { columnCount = 4 }
-        val keys = listOf("7","8","9","/","4","5","6","*","1","2","3","-","C","0",".","+","=")
-        keys.forEach { k ->
-            pad.addView(Button(this).apply { text = k; setOnClickListener { calcPress(k); renderTab() } })
+        col.addView(TextView(this).apply { text = displayText; textSize = 26f; gravity = Gravity.CENTER; setPadding(16, 16, 16, 16) })
+        return col
+    }
+
+    /** Was two completely separate digit grids, one per mode — same 0-9
+     * buttons now, meaningfully larger than either previous version, with
+     * only the action row beneath routed differently per mode. Operator
+     * keys kept in a grid rather than one wide row — 7 buttons side by
+     * side would overflow on a real phone width. */
+    private fun buildSharedKeypad(): View {
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, 16, 0, 0) }
+
+        val digitGrid = GridLayout(this).apply { columnCount = 3 }
+        for (d in 0..9) {
+            digitGrid.addView(bigKeypadButton(d.toString()).apply {
+                setOnClickListener {
+                    if (playMode == "game") { if (currentInput.size < 4) currentInput.add(d) }
+                    else calcPress(d.toString())
+                    renderTab()
+                }
+            })
         }
-        col.addView(pad)
+        col.addView(digitGrid)
+
+        if (playMode == "game") {
+            val gs = AppState.gameSession
+            val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+            if (gs == null || !gs.finished) {
+                actions.addView(bigKeypadButton("Clear").apply { setOnClickListener { currentInput.clear(); renderTab() } })
+                actions.addView(bigKeypadButton("Guess").apply { setOnClickListener { submitGuess() } })
+            } else {
+                actions.addView(bigKeypadButton("New game").apply { setOnClickListener { startNewGame(); renderTab() } })
+            }
+            col.addView(actions)
+        } else {
+            val opGrid = GridLayout(this).apply { columnCount = 4 }
+            listOf("+", "-", "*", "/", ".", "C", "=").forEach { op ->
+                opGrid.addView(bigKeypadButton(op).apply { setOnClickListener { calcPress(op); renderTab() } })
+            }
+            col.addView(opGrid)
+        }
         return col
     }
 
