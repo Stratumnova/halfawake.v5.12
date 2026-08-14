@@ -765,6 +765,13 @@ class MainActivity : AppCompatActivity() {
         col.addView(sectionTitle("Widget theme"))
         col.addView(choiceRow(listOf("light", "dark", "colorpop"), AppState.widgetTheme) { AppState.widgetTheme = it; AppState.save(this); refreshFace(); renderTab() })
 
+        col.addView(sectionTitle("Widget border"))
+        col.addView(choiceRow(listOf("gold", "metallic_green", "black", "white"), AppState.widgetBorderColor) {
+            AppState.widgetBorderColor = it; AppState.save(this)
+            com.halfwake.pocket.widget.HalfwakeWidgetProvider.updateAll(this) // otherwise the change wouldn't show on the home screen until the next ~1min auto-refresh
+            renderTab()
+        })
+
         col.addView(sectionTitle("App theme"))
         col.addView(choiceRow(listOf("light", "dark", "colorpop"), AppState.appTheme) { AppState.appTheme = it; AppState.save(this); refreshWindowTheme(); renderTab() })
 
