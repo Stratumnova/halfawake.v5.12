@@ -32,6 +32,7 @@ object AppState {
     var widgetTheme: String = "light"
     var widgetBorderColor: String = "gold" // "gold" | "metallic_green" | "black" | "white" — widget-only, see BorderColors
     var appTheme: String = "light"
+    var use24HourTime: Boolean = false // display only — alarms are always stored internally as 24h "HH:MM"
     var updateIntervalMinutes: Int = 30 // 15 | 30 | 60
     var alarmSoundUri: String? = null // null = default beep
 
@@ -105,6 +106,7 @@ object AppState {
         o.put("widgetTheme", widgetTheme)
         o.put("widgetBorderColor", widgetBorderColor)
         o.put("appTheme", appTheme)
+        o.put("use24HourTime", use24HourTime)
         o.put("updateIntervalMinutes", updateIntervalMinutes)
         o.put("alarmSoundUri", alarmSoundUri)
         o.put("winCount", winCount)
@@ -155,6 +157,7 @@ object AppState {
             widgetTheme = o.optString("widgetTheme", widgetTheme)
             widgetBorderColor = o.optString("widgetBorderColor", widgetBorderColor)
             appTheme = o.optString("appTheme", appTheme)
+            use24HourTime = o.optBoolean("use24HourTime", use24HourTime)
             updateIntervalMinutes = o.optInt("updateIntervalMinutes", updateIntervalMinutes)
             alarmSoundUri = if (o.isNull("alarmSoundUri")) null else o.optString("alarmSoundUri", null)
             winCount = o.optInt("winCount", 0)
