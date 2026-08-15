@@ -7,6 +7,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -611,9 +612,35 @@ class MainActivity : AppCompatActivity() {
         return if (hrs > 0) "in ${hrs}h ${mins}m" else "in ${mins}m"
     }
 
+    /** Internal storage stays a 24h "HH:MM" string always — that's what
+     * the tick loop matches against, and it's the one stable format any
+     * future NPC/flavor logic would read regardless of display prefs.
+     * This only affects what's actually shown on screen. */
+    private fun formatAlarmTime(time: String): String {
+        val parts = time.split(":")
+        val h = parts.getOrNull(0)?.toIntOrNull() ?: return time
+        val m = parts.getOrNull(1)?.toIntOrNull() ?: return time
+        return if (AppState.use24HourTime) String.format("%02d:%02d", h, m)
+        else {
+            val displayH = when { h == 0 -> 12; h > 12 -> h - 12; else -> h }
+            val ampm = if (h < 12) "AM" else "PM"
+            String.format("%d:%02d %s", displayH, m, ampm)
+        }
+    }
+
     private fun buildAlarmRow(i: Int, al: AlarmSlot): View {
         val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 8, 0, 8) }
         val toggleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+
+        // Colored swatch matching this alarm's own arrow color on the
+        // widget. Deliberately a plain View, not a TextView — the theming
+        // pass in renderTab() unconditionally overwrites every TextView's
+        // color, so a custom color there wouldn't actually survive. Same
+        // technique already used for the Color Pop log-entry strip.
+        toggleRow.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(36, 36).apply { gravity = Gravity.CENTER_VERTICAL; marginEnd = 12 }
+            setBackgroundColor(AlarmArrowColors.colors.getOrElse(i) { Color.RED })
+        })
 
         // Was a single Switch — real reported bug alongside the UI request:
         // edits to name/time never called renderTab(), so the screen could
@@ -648,9 +675,22 @@ class MainActivity : AppCompatActivity() {
             setText(al.name)
             setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) { al.name = text.toString().ifBlank { "Alarm ${i+1}" }; AppState.save(this@MainActivity); renderTab() } }
         })
-        row.addView(EditText(this).apply {
-            setText(al.time)
-            setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) { al.time = text.toString(); al.firedKey = null; AppState.save(this@MainActivity); renderTab() } }
+
+        // Was a free-text EditText — real confusion risk, replaced with
+        // Android's own TimePickerDialog. Internal storage format never
+        // changes; only how it's shown/entered does.
+        row.addView(Button(this).apply {
+            text = formatAlarmTime(al.time)
+            setOnClickListener {
+                val parts = al.time.split(":")
+                val curH = parts.getOrNull(0)?.toIntOrNull() ?: 7
+                val curM = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                android.app.TimePickerDialog(this@MainActivity, { _, pickedH, pickedM ->
+                    al.time = String.format("%02d:%02d", pickedH, pickedM)
+                    al.firedKey = null
+                    AppState.save(this@MainActivity); renderTab()
+                }, curH, curM, AppState.use24HourTime).show()
+            }
         })
 
         if (al.enabled) {
@@ -819,6 +859,11 @@ class MainActivity : AppCompatActivity() {
 
         col.addView(sectionTitle("App theme"))
         col.addView(choiceRow(listOf("light", "dark", "colorpop"), AppState.appTheme) { AppState.appTheme = it; AppState.save(this); refreshWindowTheme(); renderTab() })
+
+        col.addView(sectionTitle("Alarm time display"))
+        col.addView(choiceRow(listOf("12-hour", "24-hour"), if (AppState.use24HourTime) "24-hour" else "12-hour") {
+            AppState.use24HourTime = it == "24-hour"; AppState.save(this); renderTab()
+        })
 
         col.addView(sectionTitle("Diary update frequency"))
         col.addView(choiceRow(listOf("15", "30", "60"), AppState.updateIntervalMinutes.toString()) {
