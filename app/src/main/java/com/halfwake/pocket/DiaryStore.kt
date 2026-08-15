@@ -49,6 +49,4 @@ object DiaryStore {
         val entries = load(context) + entry
         save(context, entries)
     }
-
-    fun latest(context: Context): DiaryEntry? = load(context).lastOrNull()
 }
