@@ -92,7 +92,12 @@ class FaceClockView @JvmOverloads constructor(
         val borderW = if (showBorder) fullR * 0.10f else 0f
         val r = fullR - borderW
 
-        val theme = Themes.of(AppState.widgetTheme)
+        // Was always AppState.widgetTheme regardless of context — real
+        // confirmed bug. The live in-app face should reflect "App Theme,"
+        // the widget snapshot should reflect "Widget Theme" — those are
+        // deliberately separate settings, this is what actually makes
+        // them separate in practice.
+        val theme = Themes.of(if (live) AppState.appTheme else AppState.widgetTheme)
         val moodColor = Moods.colorOf(moodKey)
         val ink = theme.fg
 
