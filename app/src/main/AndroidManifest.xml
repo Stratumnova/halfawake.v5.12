@@ -21,6 +21,19 @@
          critical-battery impact notice. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Android 11+ restricts what PackageManager can see unless an app
+         declares what it needs to query — without this, "Add tracked
+         app" only ever saw a small default-visible set of packages
+         (confirmed real cause of that gap, not a permission issue and
+         genuinely nothing to do with any account linking). This restores
+         visibility into every installed launchable app. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:label="Halfwake"
